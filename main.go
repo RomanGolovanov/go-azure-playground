@@ -7,8 +7,17 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/fatih/structs"
+	"github.com/mitchellh/mapstructure"
 	"github.com/Azure/azure-sdk-for-go/storage"
 )
+
+type myData struct {
+	StringField string
+	IntField    int32
+	TimeField   time.Time
+	FLoatField  float32
+}
 
 func main() {
 
@@ -45,23 +54,27 @@ func addRecords(table *storage.Table) {
 
 	for i := 0; i < 10; i++ {
 
-		m := make(map[string]interface{})
-		m["StringField"] = "foo" + strconv.Itoa(i)
-		m["IntField"] = int32(i)
-		m["TimeField"] = time.Now()
-		m["FLoatField"] = float32(math.Pi)
+		d := myData{
+			StringField: "test" + strconv.Itoa(i),
+			IntField:    int32(i),
+			TimeField:   time.Now(),
+			FLoatField:  float32(math.Pi) + float32(i),
+		}
 
 		entity := &storage.Entity{}
 		entity.PartitionKey = "TestPartition"
 		entity.RowKey = strconv.Itoa(i)
 		entity.TimeStamp = time.Now()
 		entity.Table = table
-		entity.Properties = m
+		entity.Properties = structs.Map(d)
 
 		tableBatch.InsertOrReplaceEntityByForce(entity)
 	}
 
-	tableBatch.ExecuteBatch()
+	err := tableBatch.ExecuteBatch()
+	if err != nil {
+		panic(err)
+	}
 }
 
 func queryRecords(table *storage.Table) {
@@ -69,7 +82,7 @@ func queryRecords(table *storage.Table) {
 	queryOptions := &storage.QueryOptions{}
 	queryOptions.Filter = "(PartitionKey eq 'TestPartition')"
 
-	res, err := table.QueryEntities(30, storage.FullMetadata, queryOptions)
+	res, err := table.QueryEntities(30, storage.MinimalMetadata, queryOptions)
 	if err != nil {
 		panic(err)
 	}
@@ -77,13 +90,10 @@ func queryRecords(table *storage.Table) {
 	for i := 0; i < len(res.Entities); i++ {
 		entity := res.Entities[i]
 		props := entity.Properties
-		fmt.Println(
-			entity.PartitionKey,
-			entity.RowKey,
-			entity.TimeStamp,
-			props["StringField"].(string),
-			int32(props["IntField"].(float64)),
-			props["TimeField"].(time.Time),
-			float32(props["FLoatField"].(float64)))
+
+		var d myData
+		mapstructure.Decode(props, &d)
+
+		fmt.Println(d.StringField, d.IntField, d.TimeField, d.FLoatField)
 	}
 }
